@@ -22,7 +22,6 @@ static bool xmldebug = false;
 static char xmlcfg_filename[100] = "wiitdb";
 static int xmlmaxsize = 1572864;
 
-
 struct gameXMLinfo gameinfo;
 struct gameXMLinfo gameinfo_reset;
 
@@ -596,6 +595,222 @@ bool LoadGameInfoFromXML(char* gameid, char* langtxt)
 
     return exist;
 }
+
+
+//NILS
+struct gameXMLinfo LoadGameInfo(char* gameid)
+/* gameid: full game id */
+/* langtxt: "English","French","German" */
+{
+    // load game info using forced language, or game individual setting, or main language setting
+    char langcode[100] = "";
+    char *langtxt = GetLangSettingFromGame(gameid);
+    strlcpy(langcode,ConvertLangTextToCode(langtxt),sizeof(langcode));
+
+    /* reset all game info */
+    gameinfo = gameinfo_reset;
+
+    /* index all IDs */
+    nodeindex = mxmlIndexNew(nodedata,"id", NULL);
+    nodeid = mxmlIndexReset(nodeindex);
+    *element_text = 0;
+    /* search for game matching gameid */
+    while (1) {
+        nodeid = mxmlIndexFind(nodeindex,"id", NULL);
+        if (nodeid != NULL) {
+            get_nodetext(nodeid, element_text, sizeof(element_text));
+            if (!strcmp(element_text,gameid)) {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (!strcmp(element_text,gameid)) {
+        /* text from elements */
+        strlcpy(gameinfo.id,element_text,sizeof(gameinfo.id));
+        GetTextFromNode(nodeid, nodedata, "region", NULL, NULL, MXML_NO_DESCEND, gameinfo.region,sizeof(gameinfo.region));
+        GetTextFromNode(nodeid, nodedata, "version", NULL, NULL, MXML_NO_DESCEND, gameinfo.version,sizeof(gameinfo.version));
+        GetTextFromNode(nodeid, nodedata, "genre", NULL, NULL, MXML_NO_DESCEND, gameinfo.genre,sizeof(gameinfo.genre));
+        GetTextFromNode(nodeid, nodedata, "developer", NULL, NULL, MXML_NO_DESCEND, gameinfo.developer,sizeof(gameinfo.developer));
+        GetTextFromNode(nodeid, nodedata, "publisher", NULL, NULL, MXML_NO_DESCEND, gameinfo.publisher,sizeof(gameinfo.publisher));
+        GetPublisherFromGameid(gameid,gameinfo.publisherfromid,sizeof(gameinfo.publisherfromid));
+
+        GetTextFromNode(nodeid, nodedata, "input", "players", NULL, MXML_NO_DESCEND, gameinfo.max_players,sizeof(gameinfo.max_players));
+		
+        /* text from attributes */
+        GetTextFromNode(nodeid, nodedata, "date", "year", NULL, MXML_NO_DESCEND, gameinfo.year,sizeof(gameinfo.year));
+        GetTextFromNode(nodeid, nodedata, "date", "month", NULL,MXML_NO_DESCEND, gameinfo.month,sizeof(gameinfo.month));
+        GetTextFromNode(nodeid, nodedata, "date", "day", NULL, MXML_NO_DESCEND, gameinfo.day,sizeof(gameinfo.day));
+        GetTextFromNode(nodeid, nodedata, "rating", "type", NULL, MXML_NO_DESCEND, gameinfo.ratingtype,sizeof(gameinfo.ratingtype));
+        GetTextFromNode(nodeid, nodedata, "rating", "value", NULL, MXML_NO_DESCEND, gameinfo.ratingvalue,sizeof(gameinfo.ratingvalue));
+        GetTextFromNode(nodeid, nodedata, "rom", "crc", NULL, MXML_NO_DESCEND, gameinfo.iso_crc,sizeof(gameinfo.iso_crc));
+        GetTextFromNode(nodeid, nodedata, "rom", "md5", NULL, MXML_NO_DESCEND, gameinfo.iso_md5,sizeof(gameinfo.iso_md5));
+        GetTextFromNode(nodeid, nodedata, "rom", "sha1", NULL, MXML_NO_DESCEND, gameinfo.iso_sha1,sizeof(gameinfo.iso_sha1));
+
+        /* text from child elements */
+        nodefound = mxmlFindElement(nodeid, nodedata, "locale", "lang", "EN", MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            GetTextFromNode(nodefound, nodedata, "title", NULL, NULL, MXML_DESCEND, gameinfo.title_EN,sizeof(gameinfo.title_EN));
+            GetTextFromNode(nodefound, nodedata, "synopsis", NULL, NULL, MXML_DESCEND, gameinfo.synopsis_EN,sizeof(gameinfo.synopsis_EN));
+        }
+        nodefound = mxmlFindElement(nodeid, nodedata, "locale", "lang", langcode, MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            GetTextFromNode(nodefound, nodedata, "title", NULL, NULL, MXML_DESCEND, gameinfo.title,sizeof(gameinfo.title));
+            GetTextFromNode(nodefound, nodedata, "synopsis", NULL, NULL, MXML_DESCEND, gameinfo.synopsis,sizeof(gameinfo.synopsis));
+        }
+        // fall back to English title and synopsis if prefered language was not found
+        if (!strcmp(gameinfo.title,"")) {
+            strlcpy(gameinfo.title,gameinfo.title_EN,sizeof(gameinfo.title));
+        }
+        if (!strcmp(gameinfo.synopsis,"")) {
+            strlcpy(gameinfo.synopsis,gameinfo.synopsis_EN,sizeof(gameinfo.synopsis));
+        }
+
+        /* list locale lang attributes */
+        nodefound = mxmlFindElement(nodeid, nodedata, "locale", "lang", NULL, MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            int incr = 0;
+            while (nodefound != NULL) {
+                ++incr;
+                strlcpy(gameinfo.locales[incr],mxmlElementGetAttr(nodefound, "lang"),sizeof(gameinfo.locales[incr]));
+                nodefound = mxmlWalkNext(nodefound, nodedata, MXML_NO_DESCEND);
+                if (nodefound != NULL) {
+                    nodefound = mxmlFindElement(nodefound, nodedata, "locale", "lang", NULL, MXML_NO_DESCEND);
+                }
+            }
+        }
+
+        /* unbounded child elements */
+        GetTextFromNode(nodeid, nodedata, "wi-fi", "players", NULL, MXML_NO_DESCEND, gameinfo.wifiplayers,sizeof(gameinfo.wifiplayers));
+        nodefound = mxmlFindElement(nodeid, nodedata, "wi-fi", NULL, NULL, MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            gameinfo.wifiCnt = 0;
+            nodeindextmp = mxmlIndexNew(nodefound,"feature", NULL);
+            nodeidtmp = mxmlIndexReset(nodeindextmp);
+            while (nodeidtmp != NULL) {
+                nodeidtmp = mxmlIndexFind(nodeindextmp,"feature", NULL);
+                if (nodeidtmp != NULL) {
+                    ++gameinfo.wifiCnt;
+                    GetTextFromNode(nodeidtmp, nodedata, "feature", NULL, NULL, MXML_DESCEND, gameinfo.wififeatures[gameinfo.wifiCnt],
+                                    sizeof(gameinfo.wififeatures[gameinfo.wifiCnt]));
+                    gameinfo.wififeatures[gameinfo.wifiCnt][0] = toupper((int)gameinfo.wififeatures[gameinfo.wifiCnt][0]);
+                    if (gameinfo.wifiCnt == XML_ELEMMAX)
+                        break;
+                }
+            }
+            mxmlIndexDelete(nodeindextmp); // placed after each mxmlIndexNew to prevent memory leak
+        }
+
+        nodefound = mxmlFindElement(nodeid, nodedata, "rating", NULL, NULL, MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            gameinfo.descriptorCnt=0;
+            nodeindextmp = mxmlIndexNew(nodefound,"descriptor", NULL);
+            nodeidtmp = mxmlIndexReset(nodeindextmp);
+            while (nodeidtmp != NULL) {
+                nodeidtmp = mxmlIndexFind(nodeindextmp,"descriptor", NULL);
+                if (nodeidtmp != NULL) {
+                    ++gameinfo.descriptorCnt;
+                    GetTextFromNode(nodeidtmp, nodedata, "descriptor", NULL, NULL, MXML_DESCEND,
+                                    gameinfo.ratingdescriptors[gameinfo.descriptorCnt], sizeof(gameinfo.ratingdescriptors[gameinfo.descriptorCnt]));
+                    if (gameinfo.descriptorCnt == XML_ELEMMAX)
+                        break;
+                }
+            }
+            mxmlIndexDelete(nodeindextmp);
+        }
+
+        GetTextFromNode(nodeid, nodedata, "input", "players", NULL, MXML_NO_DESCEND, gameinfo.players,sizeof(gameinfo.players));
+        nodefound = mxmlFindElement(nodeid, nodedata, "input", NULL, NULL, MXML_NO_DESCEND);
+        if (nodefound != NULL) {
+            gameinfo.accessoryCnt=0;
+            gameinfo.accessoryReqCnt=0;
+            nodeindextmp = mxmlIndexNew(nodefound,"control", NULL);
+            nodeidtmp = mxmlIndexReset(nodeindextmp);
+            while (nodeidtmp != NULL) {
+                nodeidtmp = mxmlIndexFind(nodeindextmp,"control", NULL);
+                if (nodeidtmp != NULL) {
+                    if (!strcmp(mxmlElementGetAttr(nodeidtmp, "required"),"true")  && gameinfo.accessoryReqCnt < XML_ELEMMAX)	{
+                        ++gameinfo.accessoryReqCnt;
+                        strlcpy(gameinfo.accessoriesReq[gameinfo.accessoryReqCnt],mxmlElementGetAttr(nodeidtmp, "type"),
+                                sizeof(gameinfo.accessoriesReq[gameinfo.accessoryReqCnt]));
+                    } else if (gameinfo.accessoryCnt < XML_ELEMMAX) {
+                        ++gameinfo.accessoryCnt;
+                        strlcpy(gameinfo.accessories[gameinfo.accessoryCnt],mxmlElementGetAttr(nodeidtmp, "type"),
+                                sizeof(gameinfo.accessories[gameinfo.accessoryCnt]));
+                    }
+                }
+            }
+            mxmlIndexDelete(nodeindextmp);
+        }
+
+        /* convert rating value */
+        ConvertRating(gameinfo.ratingvalue, gameinfo.ratingtype, "CERO",gameinfo.ratingvalueCERO,sizeof(gameinfo.ratingvalueCERO));
+        ConvertRating(gameinfo.ratingvalue, gameinfo.ratingtype, "ESRB",gameinfo.ratingvalueESRB,sizeof(gameinfo.ratingvalueESRB));
+        ConvertRating(gameinfo.ratingvalue, gameinfo.ratingtype, "PEGI",gameinfo.ratingvaluePEGI,sizeof(gameinfo.ratingvaluePEGI));
+
+        /* provide genre as an array: gameinfo.genresplit */
+        if (strcmp(gameinfo.genre,"") != 0) {
+            gameinfo.genreCnt=0;
+            const char *delimgenre = ",;";
+            char genretxt[200];
+            strlcpy(genretxt,gameinfo.genre,sizeof(genretxt));
+            char *splitresult;
+            splitresult = strtok(genretxt, delimgenre);
+            if (splitresult != NULL) {
+                ++gameinfo.genreCnt;
+                trimcopy(splitresult,splitresult,strlen(splitresult)+1);
+                strlcpy(gameinfo.genresplit[gameinfo.genreCnt],splitresult,sizeof(gameinfo.genresplit[gameinfo.genreCnt]));
+                gameinfo.genresplit[gameinfo.genreCnt][0] = toupper((int)gameinfo.genresplit[gameinfo.genreCnt][0]);
+                while (splitresult != NULL) {
+                    splitresult = strtok(NULL, delimgenre);
+                    if (splitresult != NULL && strcmp(splitresult,"")!=0) {
+                        ++gameinfo.genreCnt;
+                        trimcopy(splitresult,splitresult,strlen(splitresult)+1);
+                        strlcpy(gameinfo.genresplit[gameinfo.genreCnt],splitresult,sizeof(gameinfo.genresplit[gameinfo.genreCnt]));
+                        gameinfo.genresplit[gameinfo.genreCnt][0] = toupper((int)gameinfo.genresplit[gameinfo.genreCnt][0]);
+                        if (gameinfo.genreCnt == XML_ELEMMAX)
+                            break;
+                    }
+                }
+            }
+
+        }
+
+    }
+
+    // if game was not found or info is missing
+    // guess publisher from game id in case it is missing
+    if (!strcmp(gameinfo.publisher,"")) {
+        GetPublisherFromGameid(gameid,gameinfo.publisherfromid,sizeof(gameinfo.publisherfromid));
+        strlcpy(gameinfo.publisher,gameinfo.publisherfromid,sizeof(gameinfo.publisher));
+    }
+
+    // if missing, get region from game ID
+    if (!strcmp(gameinfo.region,"")) {
+        if (gameid[3] == 'E') strlcpy(gameinfo.region,"NTSC-U",sizeof(gameinfo.region));
+        if (gameid[3] == 'J') strlcpy(gameinfo.region,"NTSC-J",sizeof(gameinfo.region));
+        if (gameid[3] == 'W') strlcpy(gameinfo.region,"NTSC-J",sizeof(gameinfo.region));
+        if (gameid[3] == 'K') strlcpy(gameinfo.region,"NTSC-K",sizeof(gameinfo.region));
+        if (gameid[3] == 'P') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'D') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'F') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'I') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'S') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'H') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'U') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+		if (gameid[3] == 'X') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'Y') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+        if (gameid[3] == 'Z') strlcpy(gameinfo.region,"PAL",sizeof(gameinfo.region));
+    }
+
+    // free memory
+    mxmlIndexDelete(nodeindex);
+
+    return gameinfo;
+}
+//END
 
 
 void PrintGameInfo(bool showfullinfo) {

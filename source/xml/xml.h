@@ -9,6 +9,7 @@
 extern "C" {
 #endif
 
+
 // open database, close database, load info for a game
     bool OpenXMLDatabase(char* xmlfilepath, char* argdblang, bool argJPtoEN, bool openfile, bool loadtitles, bool keepopen);
     void CloseXMLDatabase();
@@ -54,7 +55,12 @@ extern "C" {
         char    iso_crc[9];
         char    iso_md5[33];
         char    iso_sha1[41];
+		char	max_players[2];
     } ;
+	
+	//NILS
+    struct gameXMLinfo LoadGameInfo(char* gameid);
+	//END
 
     bool OpenXMLFile(char* filename);
     void LoadTitlesFromXML(char *langcode, bool forcejptoen);

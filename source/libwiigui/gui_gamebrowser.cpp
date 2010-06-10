@@ -17,6 +17,9 @@
 
 #include <string.h>
 #include <sstream>
+//NILS
+#include "../xml/xml.h"
+//END
 
 #define GAMESELECTSIZE      30
 int txtscroll = 0;
@@ -127,7 +130,7 @@ GuiGameBrowser::GuiGameBrowser(int w, int h, struct discHdr * l, int gameCnt, co
 	gameBg = new GuiImage * [pagesize];
 	newImg = new GuiImage * [pagesize];
 
-	for(int i=0; i < pagesize; i++)
+	for(int i=0;; i < pagesize; i++)
 	{
 		gameTxt[i] = new GuiText(get_title(&gameList[i]), 20, THEME.gametext);
 		gameTxt[i]->SetAlignment(ALIGN_LEFT, ALIGN_MIDDLE);
@@ -329,16 +332,27 @@ void GuiGameBrowser::UpdateListEntries()
 	int next = listOffset;
 	for(int i=0; i<pagesize; i++)
 	{
+		
 		if(next >= 0)
 		{
+			
+			//NILS			
+			struct gameXMLinfo g = LoadGameInfo(gameList[next].id);
+			//bool b = LoadGameInfoFromXML(id, (char*)("")); //GAME EXISTS?
+						
+			char *title = new char[255];
+			sprintf(title, "(%s) %s", g.max_players, get_title(&gameList[next]));
+			//END
+			
+			
 			if(game[i]->GetState() == STATE_DISABLED)
 			{
 				game[i]->SetVisible(true);
 				game[i]->SetState(STATE_DEFAULT);
 			}
-			gameTxt[i]->SetText(get_title(&gameList[next]));
+			gameTxt[i]->SetText(title);
 			gameTxt[i]->SetPosition(24, 0);
-			gameTxtOver[i]->SetText(get_title(&gameList[next]));
+			gameTxtOver[i]->SetText(title);
 			gameTxtOver[i]->SetPosition(24, 0);
 
 			if (Settings.marknewtitles) {
@@ -369,6 +383,7 @@ void GuiGameBrowser::Update(GuiTrigger * t)
 	LOCK(this);
 	if(state == STATE_DISABLED || !t || !gameCnt)
 		return;
+	
 
 	int next, prev;
 	int old_listOffset = listOffset;
